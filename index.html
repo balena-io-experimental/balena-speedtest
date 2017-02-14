@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<script language='javascript' type='text/javascript'>
+    const CRYPTO_MAXLEN = 65536;
+    const PAYLOAD_MAXLEN = CRYPTO_MAXLEN; // 65536 is plenty with the speedtest, too
+
+    function getWsUrl() {
+        let proto = location.protocol.replace(/^http/, 'ws');
+        return `${proto}//${location.host}/echo`;
+    }
+
+    function makeRandomString(length) {
+        let passes = Math.ceil(length / CRYPTO_MAXLEN),
+            result = '';
+        for (let p = 0; p < passes; p++) {
+            let passLen = Math.min(length - (CRYPTO_MAXLEN * p), CRYPTO_MAXLEN),
+                values = new Uint8Array(passLen);
+            window.crypto.getRandomValues(values);
+            for (let i = 0; i < passLen; i++) {
+                result += String.fromCharCode(values[i]);
+            }
+        }
+        return result;
+    }
+
+    function main() {
+        // Web Socket Test
+        let T_INIT = performance.now(),
+            T_OPEN, T_PING, T_PONG, T_CLOSE;
+        let websocket = new WebSocket(getWsUrl());
+        websocket.onopen = function () {
+            T_OPEN = performance.now();
+            let t_delta = Math.round((T_OPEN - T_INIT) * 10000) / 10000;
+            document.write(`Starting WebSocket Test...<pre>Socket opened in ${t_delta}ms<br/>`);
+            T_PING = performance.now();
+            websocket.send('');
+        };
+        websocket.onmessage = function (event) {
+            T_PONG = performance.now();
+            let t_delta = Math.round((T_PONG - T_PING) * 10000) / 10000;
+            document.write(`RTT (payload-length: ${event.data.length}) was ${t_delta}ms<br/>`);
+
+            let nextLen = event.data.length || 1;
+            if (event.data.length > 0) {
+                nextLen *= 2;
+            }
+
+            if (nextLen <= PAYLOAD_MAXLEN) {
+                let nextData = makeRandomString(nextLen);
+                T_PING = performance.now();
+                websocket.send(nextData);
+            } else {
+                websocket.close();
+            }
+        };
+        websocket.onclose = function () {
+            T_CLOSE = performance.now();
+            let t_delta = Math.round((T_CLOSE - T_INIT) * 10000) / 10000;
+            document.write(`Disconnected after ${t_delta}ms</pre>...Done<hr/>`);
+
+            speedtest();
+        };
+    }
+
+    function speedtest() {
+        // Web Worker Test
+        document.write(`Starting WebWorker Test...<pre>`);
+        let worker = new Worker('/worker.js'),
+            workerPing = setInterval(function () {
+                worker.postMessage('status');
+            }.bind(this), 100);
+        worker.onmessage = function (event) {
+            let data = event.data.split(';'),
+                stData = {
+                    'dl': ['DL', data[1], 'Mbit/s'],
+                    'ul': ['UL', data[2], 'Mbit/s'],
+                    'pg': ['PING', data[3], 'ms']
+                };
+            for (let id in stData) {
+                let el = document.getElementById(id);
+                if (el == null && stData[id][1].length > 0) {
+                    document.write(`${stData[id][0]}: <span id='${id}'></span>${stData[id][2]}<br/>`);
+                    el = document.getElementById(id);
+                }
+                if (stData[id][1].length > 0) {
+                    el.innerText = stData[id][1];
+                }
+            }
+            if (data[0] == '4') {
+                clearInterval(workerPing);
+                document.write('</pre>...Done');
+            }
+        };
+        worker.postMessage('start');
+    }
+
+    window.addEventListener('load', main, false);
+</script>

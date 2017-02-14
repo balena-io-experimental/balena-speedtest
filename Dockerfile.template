@@ -1,0 +1,22 @@
+FROM resin/%%RESIN_MACHINE_NAME%%-node:slim
+
+ENV INITSYSTEM on
+WORKDIR /usr/src/app
+
+# update apt lists
+RUN apt-get update -q
+
+# install utils
+RUN apt-get install -yq --no-install-recommends curl mtr iperf3 unzip openssh-client
+
+# install ngrok
+RUN cd /tmp && curl -OJL https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-arm.zip && unzip /tmp/ngrok-stable-linux-arm.zip && mv /tmp/ngrok /usr/local/bin/ngrok && rm /tmp/ngrok-stable-linux-arm.zip
+
+# cleanup apt
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package.json
+RUN JOBS=MAX npm install --production --unsafe-perm && npm cache clean && rm -rf /tmp/*
+COPY . ./
+
+CMD ["npm", "start"]
